@@ -6,7 +6,7 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
+    "start": "node scripts/prepare-local-bot-api.js && node server.js",
     "dev": "node --watch server.js"
   },
   "engines": {
