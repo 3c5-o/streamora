@@ -115,17 +115,42 @@ function seriesPreview(item, source) {
   };
 }
 
-function cleanObject(value) {
+function cleanObject(value, source) {
+  if (typeof value === "string") {
+    const password = String(source?.password || "");
+    const username = String(source?.username || "");
+
+    if (
+      (password && value.includes(password)) ||
+      /[?&](username|password)=/i.test(value) ||
+      (username && password && value.includes(`/${username}/${password}/`))
+    ) {
+      return null;
+    }
+
+    return value;
+  }
+
   if (!value || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(cleanObject);
+  if (Array.isArray(value)) return value.map((item) => cleanObject(item, source));
 
   const output = {};
+  const blockedKeys = new Set([
+    "username",
+    "password",
+    "user",
+    "pass",
+    "direct_source",
+    "stream_url",
+    "video_url",
+    "play_url"
+  ]);
+
   for (const [key, item] of Object.entries(value)) {
-    if (["username", "password", "user", "pass"].includes(key.toLowerCase())) {
-      continue;
-    }
-    output[key] = cleanObject(item);
+    if (blockedKeys.has(key.toLowerCase())) continue;
+    output[key] = cleanObject(item, source);
   }
+
   return output;
 }
 
@@ -243,7 +268,7 @@ app.get("/api/details/movie/:sourceId/:id", async (req, res) => {
     res.json({
       ok: true,
       source: publicSource(source),
-      data: cleanObject(data)
+      data: cleanObject(data, source)
     });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -259,7 +284,7 @@ app.get("/api/details/series/:sourceId/:id", async (req, res) => {
     res.json({
       ok: true,
       source: publicSource(source),
-      data: cleanObject(data)
+      data: cleanObject(data, source)
     });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
