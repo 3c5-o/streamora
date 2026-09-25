@@ -3,6 +3,7 @@ require("dotenv").config();
 const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
+const { Readable } = require("stream");
 
 const { loadConfig, publicSource } = require("./lib/store");
 const xtream = require("./lib/xtream");
@@ -84,6 +85,88 @@ function getSourceOrThrow(sourceId) {
 
   if (!source) throw new Error("المصدر غير موجود أو متوقف.");
   return source;
+}
+
+function verifyMediaProxyToken(payload, signature) {
+  const expected = crypto
+    .createHmac("sha256", BOT_TOKEN)
+    .update(payload)
+    .digest("base64url");
+
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(signature || ""));
+
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    throw new Error("Invalid media signature.");
+  }
+
+  const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+
+  if (!data.x || Number(data.x) < Math.floor(Date.now() / 1000)) {
+    throw new Error("Media link expired.");
+  }
+
+  return data;
+}
+
+function inferredContentType(ext) {
+  const map = {
+    mp4: "video/mp4",
+    m4v: "video/mp4",
+    mov: "video/quicktime",
+    webm: "video/webm",
+    mkv: "video/x-matroska",
+    avi: "video/x-msvideo",
+    ts: "video/mp2t",
+    m3u8: "application/vnd.apple.mpegurl"
+  };
+  return map[String(ext || "").toLowerCase()] || "application/octet-stream";
+}
+
+async function resolveUpstreamMediaUrl(source, tokenData) {
+  if (tokenData.t === "movie") {
+    try {
+      const raw = await xtream.getVodInfo(source, tokenData.i);
+      const direct =
+        raw?.movie_data?.direct_source ||
+        raw?.info?.direct_source ||
+        raw?.info?.stream_url ||
+        raw?.info?.video_url;
+
+      if (typeof direct === "string" && /^https?:\/\//i.test(direct)) {
+        return direct;
+      }
+    } catch {}
+
+    return xtream.movieUrl(source, tokenData.i, tokenData.e);
+  }
+
+  if (tokenData.t === "series") {
+    if (tokenData.r && tokenData.n) {
+      try {
+        const raw = await xtream.getSeriesInfo(source, tokenData.r);
+        const episodes = raw?.episodes || {};
+        const list = episodes[tokenData.n] || episodes[Number(tokenData.n)] || [];
+        const episode = Array.isArray(list)
+          ? list.find((item) => String(item.id) === String(tokenData.i))
+          : null;
+
+        const direct =
+          episode?.direct_source ||
+          episode?.info?.direct_source ||
+          episode?.info?.stream_url ||
+          episode?.info?.video_url;
+
+        if (typeof direct === "string" && /^https?:\/\//i.test(direct)) {
+          return direct;
+        }
+      } catch {}
+    }
+
+    return xtream.episodeUrl(source, tokenData.i, tokenData.e);
+  }
+
+  throw new Error("Unsupported media type.");
 }
 
 function moviePreview(item, source) {
@@ -291,6 +374,89 @@ app.get("/api/details/series/:sourceId/:id", async (req, res) => {
   }
 });
 
+
+app.all("/media/:payload/:signature/:filename", async (req, res) => {
+  try {
+    if (!["GET", "HEAD"].includes(req.method)) {
+      return res.sendStatus(405);
+    }
+
+    const tokenData = verifyMediaProxyToken(
+      String(req.params.payload || ""),
+      String(req.params.signature || "")
+    );
+
+    const source = getSourceOrThrow(String(tokenData.s || ""));
+    const upstreamUrl = await resolveUpstreamMediaUrl(source, tokenData);
+
+    const headers = {
+      "user-agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+      accept: "*/*"
+    };
+
+    if (req.headers.range) {
+      headers.range = req.headers.range;
+    }
+
+    const upstream = await fetch(upstreamUrl, {
+      method: req.method === "HEAD" ? "HEAD" : "GET",
+      headers,
+      redirect: "follow",
+      signal: AbortSignal.timeout(120000)
+    });
+
+    if (!upstream.ok && upstream.status !== 206) {
+      console.error(
+        "media proxy upstream failed",
+        JSON.stringify({
+          sourceId: source.id,
+          mediaType: tokenData.t,
+          mediaId: tokenData.i,
+          status: upstream.status,
+          contentType: upstream.headers.get("content-type")
+        })
+      );
+      return res.sendStatus(502);
+    }
+
+    const upstreamType = String(upstream.headers.get("content-type") || "");
+    const contentType =
+      upstreamType.startsWith("video/") ||
+      upstreamType.includes("octet-stream") ||
+      upstreamType.includes("mpegurl")
+        ? upstreamType
+        : inferredContentType(tokenData.e);
+
+    res.status(upstream.status === 206 ? 206 : 200);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename="stream.${xtream.safeExt(tokenData.e)}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Accept-Ranges", upstream.headers.get("accept-ranges") || "bytes");
+
+    for (const name of ["content-length", "content-range", "etag", "last-modified"]) {
+      const value = upstream.headers.get(name);
+      if (value) res.setHeader(name, value);
+    }
+
+    if (req.method === "HEAD") {
+      return res.end();
+    }
+
+    if (!upstream.body) {
+      return res.sendStatus(502);
+    }
+
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (error) {
+    console.error("media proxy error:", error.message);
+    if (!res.headersSent) {
+      res.status(403).end();
+    } else {
+      res.end();
+    }
+  }
+});
+
 app.post("/api/send", async (req, res) => {
   try {
     // إرسال المحتوى يتطلب جلسة Telegram حقيقية، حتى لو وضع DEV mode.
@@ -366,7 +532,9 @@ app.post("/api/send", async (req, res) => {
         mediaType: "series",
         mediaId: episodeId,
         extension,
-        title
+        title,
+        seriesId,
+        season
       });
 
       return res.json({ ok: true, result });
