@@ -350,7 +350,7 @@ async function sendMovie(item) {
       })
     });
 
-    showToast("تم إرسال الفيلم إلى محادثتك.");
+    showToast("بدأ الطلب. تابع تقدم التحميل داخل البوت.");
     tg?.HapticFeedback?.notificationOccurred("success");
   } catch (error) {
     showToast(error.message, 4200);
@@ -379,7 +379,7 @@ async function sendEpisode(seriesItem, season, episode) {
       })
     });
 
-    showToast("تم إرسال الحلقة إلى محادثتك.");
+    showToast("بدأ الطلب. تابع تقدم التحميل داخل البوت.");
     tg?.HapticFeedback?.notificationOccurred("success");
   } catch (error) {
     showToast(error.message, 4200);
