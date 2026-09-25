@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d12" />
+  <title>Streamora</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <span class="eyebrow">STREAMORA</span>
+        <h1 id="brandName">Streamora</h1>
+      </div>
+      <button id="refreshBtn" class="icon-btn" aria-label="تحديث">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/>
+        </svg>
+      </button>
+    </header>
+
+    <section class="search-section">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-3.5-3.5"></path>
+        </svg>
+        <input id="searchInput" type="search" placeholder="ابحث عن فيلم أو مسلسل" autocomplete="off" />
+        <button id="searchBtn">بحث</button>
+      </div>
+
+      <div class="type-switch" role="tablist">
+        <button class="type-btn active" data-type="movie">الأفلام</button>
+        <button class="type-btn" data-type="series">المسلسلات</button>
+      </div>
+    </section>
+
+    <main>
+      <section class="section-head">
+        <div>
+          <h2 id="sectionTitle">الأفلام</h2>
+          <p id="sectionSub">اختر المحتوى ليتم إرساله إلى محادثتك في Telegram</p>
+        </div>
+      </section>
+
+      <div id="status" class="status hidden"></div>
+      <div id="grid" class="media-grid"></div>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-action="home">
+        <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>
+        <span>الرئيسية</span>
+      </button>
+      <button class="nav-btn" data-action="movies">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9h4M17 9h4M3 15h4M17 15h4"/></svg>
+        <span>الأفلام</span>
+      </button>
+      <button class="nav-btn" data-action="series">
+        <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m9 3 3 2 3-2"/></svg>
+        <span>المسلسلات</span>
+      </button>
+      <button class="nav-btn" data-action="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span>البحث</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close="1"></div>
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <button id="closeModal" class="sheet-close" aria-label="إغلاق">×</button>
+      <div id="details"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
