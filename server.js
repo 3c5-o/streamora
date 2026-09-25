@@ -19,6 +19,24 @@ if (!BOT_TOKEN) {
 
 const telegram = createTelegramService();
 const app = express();
+const deliveryJobs = new Set();
+
+function queueDeliveryJob(key, task) {
+  if (deliveryJobs.has(key)) return false;
+
+  deliveryJobs.add(key);
+
+  Promise.resolve()
+    .then(task)
+    .catch((error) => {
+      console.error("delivery job failed:", error.message);
+    })
+    .finally(() => {
+      deliveryJobs.delete(key);
+    });
+
+  return true;
+}
 
 app.use(express.json({ limit: "256kb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -459,7 +477,6 @@ app.all("/media/:payload/:signature/:filename", async (req, res) => {
 
 app.post("/api/send", async (req, res) => {
   try {
-    // إرسال المحتوى يتطلب جلسة Telegram حقيقية، حتى لو وضع DEV mode.
     const user = telegramUser(req, false);
     const body = req.body || {};
     const source = getSourceOrThrow(String(body.sourceId || ""));
@@ -483,16 +500,23 @@ app.post("/api/send", async (req, res) => {
         info.container_extension ||
         "mp4";
 
-      const result = await telegram.deliverAuthorizedMedia({
-        chatId: user.id,
-        source,
-        mediaType: "movie",
-        mediaId: movieId,
-        extension,
-        title
-      });
+      const jobKey = `${user.id}:${source.id}:movie:${movieId}`;
+      const queued = queueDeliveryJob(jobKey, () =>
+        telegram.deliverAuthorizedMedia({
+          chatId: user.id,
+          source,
+          mediaType: "movie",
+          mediaId: movieId,
+          extension,
+          title
+        })
+      );
 
-      return res.json({ ok: true, result });
+      return res.json({
+        ok: true,
+        queued,
+        alreadyQueued: !queued
+      });
     }
 
     if (body.type === "series") {
@@ -526,18 +550,25 @@ app.post("/api/send", async (req, res) => {
         info.container_extension ||
         "mp4";
 
-      const result = await telegram.deliverAuthorizedMedia({
-        chatId: user.id,
-        source,
-        mediaType: "series",
-        mediaId: episodeId,
-        extension,
-        title,
-        seriesId,
-        season
-      });
+      const jobKey = `${user.id}:${source.id}:series:${episodeId}`;
+      const queued = queueDeliveryJob(jobKey, () =>
+        telegram.deliverAuthorizedMedia({
+          chatId: user.id,
+          source,
+          mediaType: "series",
+          mediaId: episodeId,
+          extension,
+          title,
+          seriesId,
+          season
+        })
+      );
 
-      return res.json({ ok: true, result });
+      return res.json({
+        ok: true,
+        queued,
+        alreadyQueued: !queued
+      });
     }
 
     throw new Error("Unsupported media type.");
